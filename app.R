@@ -30,16 +30,16 @@ get_theoretical_results <- function(atoms_number, half_life, time_step, time_ste
 
 run_simulation <- function(atoms_number, half_life, time_step, time_step_count) {
     decay_probability_function <- create_decay_probability_function(half_life)
+    decay_probability <- decay_probability_function(time_step)
     current_atoms_number <- atoms_number
     simulation_counts <- c()
     time_seq <- seq(0, time_step * time_step_count, time_step)
         
     for (time in time_seq) {
-        decay_probability <- decay_probability_function(time)
+        simulation_counts <- c(simulation_counts, current_atoms_number)
         simulation_probabilities <- runif(n = current_atoms_number)
         decayed_atoms_count <- sum(simulation_probabilities < decay_probability)
         current_atoms_number <- current_atoms_number - decayed_atoms_count
-        simulation_counts <- c(simulation_counts, current_atoms_number)
     }
     
     simulation_counts
@@ -81,7 +81,8 @@ ui <- navbarPage(
              ),
              
              mainPanel(
-                 withSpinner(plotlyOutput("simulation_plot"))
+                 withSpinner(plotlyOutput("simulation_plot")),
+                 DT::dataTableOutput("simulation_data")
              )
          )
     )
@@ -90,6 +91,7 @@ ui <- navbarPage(
 
 server <- function(input, output, session) {
   simulation_plot <- reactiveVal()
+  simulation_result_df <- reactiveVal()
   
   observeEvent(input$simulation_start, {
     validate(
@@ -116,7 +118,7 @@ server <- function(input, output, session) {
     )
     
     simulation_results <- data.frame(
-      step = rep(seq(0, half_life * input$time_step_count, half_life), 2),
+      step = rep(seq(0, input$time_step * input$time_step_count, input$time_step), 2),
       atoms_count = c(theoretical_counts, simulation_counts),
       measurement_type = c(
         rep("theory", length(theoretical_counts)),
@@ -124,9 +126,15 @@ server <- function(input, output, session) {
       )
     )
     
+    max_time <- input$time_step * input$time_step_count
+    half_life <- atoms[input$atom, "half_life"]
+    
     p <- ggplot(simulation_results, mapping = aes(x = step, y = atoms_count, color = measurement_type)) +
       geom_point() +
-      geom_line()
+      geom_line() + 
+      scale_x_continuous(breaks = seq(0, max_time, by = half_life))
+    
+    simulation_result_df(simulation_results)
     simulation_plot(p)
   })
   
@@ -134,6 +142,12 @@ server <- function(input, output, session) {
      req(simulation_plot())
      ggplotly(simulation_plot())
    })
+   
+   output$simulation_data <- DT::renderDataTable({
+     req(simulation_result_df())
+     DT::datatable(simulation_result_df())
+   })
+   
 }
 
 shinyApp(ui = ui, server = server)
